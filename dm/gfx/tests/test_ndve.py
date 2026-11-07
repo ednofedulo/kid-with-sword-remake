@@ -24,13 +24,15 @@ def pack():
     """NDVE header with an NDSR table at +0x28 (one record among records of other sizes), a table-named program, two raw programs and a section without code"""
     d = bytearray(0x400)
     d[:4] = b'NDVE'; d[0x28:0x2c] = b'NDSR'
+    struct.pack_into('<I', d, 0x14, 2)
+    struct.pack_into('<I', d, 0x0c, len(d) - 0x28)
     t = 0x28
     code_t = bytes([0x19, 0x79]) + bytes(0x17e)   # 0x180 bytes, the table-named program's code area
     d[0x100:0x100 + len(code_t)] = code_t
     c_t = 0x300
     d[c_t:c_t + 0xe0] = ctl(0x11, 0, len(code_t))
-    words = [0x0c000001, 0x104f00, c_t - t, 0xe0 << 4 | 6, 0x100 - t, len(code_t) // 16 << 8 | 7, 0x49]
-    struct.pack_into(f'<{len(words)}I', d, 0x30, *words)
+    words = [c_t - t, 0xe0 << 4 | 6, 0x100 - t, len(code_t) // 16 << 8 | 7, 0x49]
+    struct.pack_into(f'<{len(words)}I', d, 0x38, *words)
     for i in range(2):   # raw programs: section, then its code area 0x100 further on
         c = len(d); code = bytes([0x19, 0x79, i]) + bytes(0xfd)
         d += ctl(0x14, 0x100, len(code), group=(32, 1, 1)) + bytes(0x100 - 0xe0) + code
@@ -43,7 +45,7 @@ class NdveTests(unittest.TestCase):
         found = split.ndve_shaders(pack(), 'Movie/Ndve/x.dat')
         self.assertEqual(len(found), 3)
         self.assertEqual({st for _, st, _, _ in found}, {'cs'})
-        self.assertEqual(sum('#NDVE#NDSR@' in w for w, _, _, _ in found), 1)
+        self.assertEqual(sum('#NDSR@' in w for w, _, _, _ in found), 1)
         for _, st, c, code in found:
             self.assertEqual(struct.unpack_from('<I', c, 0x44)[0], len(code))
             self.assertIsNone(split.check('x', st, c, code))

@@ -56,6 +56,10 @@ class GuardedWrites(Translated):
         for code in ((0x000f4200081e0f04, 0x3000040702067f63), (0x000142000c1e03ff, 0x2000040400167f6c), (0x00014200001e0f12, 0x3800001002101364)):   # TLD4 and TXD through a uniform register, TLD4 through a register
             self.translate(inst(*code) + inst(*EXIT))
 
+    def test_lod_query_handle_forms_translate(self):   # TMML through a uniform register and a register (Kirby Air Riders' 4,776 pixel shaders, as encoded there)
+        for code in ((0x000f4200080002ff, 0x600004ff20277f69), (0x000f4200000002ff, 0x68000018141d736a)):
+            self.translate(inst(*code) + inst(*EXIT))
+
     def test_gradients_through_a_uniform_register_keep_their_handle(self):
         # UR4 = c3[0x10]; TXD through UR4 (write barrier 5); after waiting on it, the result atomically added to an image, so it stays. The translator takes its source 0 as the handle: without it, it could not find one and deleted the read
         ur4, txd, used = (0x000fe20000000a00, 0x00c0040000047ab9), (0x000142000c1e03ff, 0x2000040400167f6c), (0x020ea200001ee000, 0x00000c16030c7593)
@@ -136,23 +140,22 @@ class Suatom(Translated):
         self.assertRegex(msl, r'uint \w+ = [^;]*atomic_fetch_add')
 
 
-class AtomgCas(Translated):
-    # ATOMG.E.CAS R0, [R0.64], R8, R9 (0x3a9), as Ocarina of Time's foliage compute shaders (FoliageShader.sharcb, e.g. 13002657609092b4 at 0x8c00) claim a hash slot: CAS(slot, 0, index + 1)
-    CAS = (0x000ea400001ee109, 0x00000008000073a9)
-    MOV_R8, MOV_R9 = (0x000fe20000000f00, 0x0100000000087a02), (0x000fe20000000f00, 0x0100010000097a02)   # R8 = c4[0], R9 = c4[4]
-    USE = (0x004ea200001ee000, 0x00000c00000c7593)   # SUATOM.ADD of R0 after waiting on the CAS, so its result stays
+class MufuTurns(Translated):
+    """MUFU.SIN / COS take turns and use their fraction: the lowering takes t - rint(t) before the 2pi multiply (Donkey Kong Bananza's SSAO a6f04605183d9915 rotates its kernel by up to
+    2.5e6 turns at its full-size effects; t * 2pi lost the fraction and Metal's fast sin / cos returned 0 past 2^20 turns, a screen corner with no ambient occlusion). The values are checked on
+    the GPU by dm/gfx/tests/t_mufu_turns.m"""
+    COS = (0x000fe60000000000, 0x0000000c000c7308)   # MUFU.COS R12, R12 (op 0, bits 74..80), the F16 form's encoding above without .F16 and the half select
+    SIN = (0x000fe60000000400, 0x0000000c000c7308)   # MUFU.SIN R12, R12 (op 1)
 
-    def test_a_compare_and_swap_returning_the_old_word(self):
-        msl = self.translate(b''.join(inst(*c) for c in (self.MOV_R8, self.MOV_R9, self.CAS, self.USE, EXIT)))
-        self.assertIn('atomic_compare_exchange', msl)
+    def lowered(self, mufu, fn):
+        msl = self.translate(inst(*mufu) + inst(*SUATOM) + inst(*EXIT))
+        # R12 is never written here, so the argument is the constant 0.0; the debug build's arithmetic goes through spirv-cross's precise helpers (spvFSub, spvFMul)
+        m = re.search(r'float (_\d+) = rint\(([\w.]+)\);\s*float (_\d+) = (?:spvFSub\(\2, \1\)|\2 - \1);\s*float (_\d+) = (?:spvFMul\(\3, 6\.283185482025146484375\)|\3 \* 6\.283185482025146484375);'
+                      r'\s*float _\d+ = ' + fn + r'\(\4\);', msl)
+        self.assertTrue(m, msl)
 
-    def test_64_bit_is_refused(self):   # size 2 (U64) at 73..76: the pairs are not read
-        code = inst(self.CAS[0] | 2 << 9, self.CAS[1]) + inst(*EXIT)
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / 'k.bin').write_bytes(code)
-            (Path(d) / 'jobs.json').write_text(json.dumps([dict(key='k', stage='cs', arch='sm86', code=str(Path(d) / 'k.bin'), tex={}, img={}, attr={}, fout={}, local=[32, 1, 1], nvn2_cs=[0, 0, 3, 0x40, 0])]))
-            r = subprocess.run([os.environ['DMSH_TEST_XLATE'], str(Path(d) / 'jobs.json'), d], capture_output=True, text=True)
-        self.assertIn('ATOMG.CAS size U64', r.stdout + r.stderr)
+    def test_cos(self): self.lowered(self.COS, 'cos')
+    def test_sin(self): self.lowered(self.SIN, 'sin')
 
 
 class Bmsk(Translated):
@@ -178,9 +181,9 @@ class PixelCovered(unittest.TestCase):
     OTHER = (0x040e0200000e8000, 0x0000000000007925)   # bits 78..80 = 2, not seen
     SPH = struct.pack('<32I', *([0x000c5482] + [0] * 4 + [0xb0000000] + [0] * 12 + [0xf] + [0] * 13))   # the game's: writes colour 0
 
-    def run_job(self, op):
+    def run_job(self, *ops):
         with tempfile.TemporaryDirectory(prefix='ampere_px_') as d:
-            work = Path(d); (work / 'k.bin').write_bytes(self.SPH + inst(*op) + inst(*EXIT))
+            work = Path(d); (work / 'k.bin').write_bytes(self.SPH + b''.join(inst(*op) for op in ops) + inst(*EXIT))
             (work / 'jobs.json').write_text(json.dumps([dict(key='k', stage='ps', arch='sm86', code=str(work / 'k.bin'), tex={}, img={}, attr={}, fout={}, debug=True)]))
             r = subprocess.run([os.environ['DMSH_TEST_XLATE'], str(work / 'jobs.json'), d], capture_output=True, text=True)
             if not (work / 'k.spv').exists(): return None, r.stdout + r.stderr
@@ -200,6 +203,22 @@ class PixelCovered(unittest.TestCase):
         msl, log = self.run_job(self.OTHER)
         self.assertIsNone(msl)
         self.assertIn('0x925 form 2', log)
+
+
+@unittest.skipUnless(os.environ.get('DMSH_TEST_XLATE'), 'set DMSH_TEST_XLATE to the offline translator')
+class DepthRegister(unittest.TestCase):
+    """A pixel shader's depth output follows its colours at four registers per enabled render target, then the sample mask register. Ocarina of Time's agl_common depth pass
+    (ps_lib 519, OmapTargets 0x10f: RT0 RGBA in R0..R3, RT2 R in R4) writes its depth to R9; the component count put it in R6, which holds a step before"""
+    run_job = PixelCovered.run_job
+    SPH = struct.pack('<32I', *([0x000c5482] + [0] * 4 + [0xb0000000] + [0] * 12 + [0x10f, 0x2] + [0] * 12))   # colours 0x10f, depth written (+0x4c bit 1)
+
+    @staticmethod
+    def mov(reg, value): return (0x000fe20000000f00, value << 32 | reg << 16 | 0x7802)   # MOV Rd, imm32
+
+    def test_depth_comes_after_the_last_target_block(self):
+        msl, log = self.run_job(self.mov(6, 0x3e800000), self.mov(9, 0x3f400000))   # R6 = 0.25, R9 = 0.75
+        self.assertIsNotNone(msl, log)
+        self.assertRegex(msl, r'gl_FragDepth = 0\.75')
 
 
 class MufuF16(Translated):
@@ -272,7 +291,7 @@ class StageMemory(Translated):
         with_zero = self.msl(self.COUNT_ZERO, self.COUNT)
         self.assertEqual(without.count('atomic_compare_exchange'), with_zero.count('atomic_compare_exchange'))
 
-    def test_a_byte_goes_through_its_word_atomically(self):   # neighbouring threads write neighbouring bytes
+    def test_a_byte_goes_through_its_word_atomically(self):   # neighbouring threads write neighbouring bytes; the shader build makes the helper's loop one byte store (test_dmsh_shared_store.py)
         self.assertIn('atomic_compare_exchange', self.msl(self.INDEX))
 
     def test_outside_a_task_or_mesh_shader_it_is_refused(self):
@@ -563,7 +582,7 @@ def ctrl(wb=7, wait=0, stall=2):   # an instruction's control bits, high word: s
 
 class RawGlobal(Translated):
     """A load at an address the shader loaded from memory, which no storage buffer holds (GlobalToStorage.TryGenerateRawStorageOp): it goes through the host's pool table
-    (dmsh_abi.h DMSH_GMEM_MAP_*), the chunk's hint in words 6 and 7 of an entry, else a binary search over as many entries as entry 0 says (word 4), however many the pools need.
+    (dmsh_abi.h DMSH_GMEM_MAP_*), the packed chunk hint in word 6, else the fixed 8,192-entry binary search.
     t_gmem_raw runs it on the GPU against the host's table (--fixture)"""
     ULDC = (0x000fe40000000a00, 0x0000100000067ab9)      # ULDC.64 UR6, c[0][0x40]: storage slot 0 with this job's c0 layout (3 uniform buffers, 1 storage buffer)
     ADDR_LO = (0x000fe2000f8e00ff, 0x00000006ff027e24)   # IMAD.U32 R2, RZ, RZ, UR6
@@ -578,15 +597,15 @@ class RawGlobal(Translated):
 
     def has(self, msl, pattern): self.assertTrue(re.search(pattern, msl), f'no {pattern} in the raw access function')   # not the whole source in the message
 
-    def test_the_search_takes_the_tables_count(self):   # a loop of log2(count) steps from word 4 of entry 0, not 12 steps over a table of 4,096
+    def test_the_search_covers_the_upstream_fixed_table(self):
         msl = self.msl()
-        self.has(msl, r'= 0 \+ 4;')
-        self.has(msl, r'\bdo\s*\{[^}]*>> uint\(1\)[^}]*\} while \(')
-        self.assertFalse(re.search(r'\b2048u?\b', msl), 'an unrolled search over 4,096 entries')
+        self.has(msl, r'= 0 \+ 4096;')
+        self.assertNotRegex(msl, r'\bdo\s*\{[^}]*>> uint\(1\)[^}]*\} while \(')
 
-    def test_the_hint_has_its_chunk_and_entry_in_two_words(self):   # the 32-bit chunk number in word 6, any entry's index in word 7; chunks whole below 2^53
+    def test_the_hint_packs_chunk_and_entry_in_one_word(self):
         msl = self.msl()
-        for pattern in (r'>> uint\(21\)', r'& 4095;', r'\+ 6;', r'\+ 7;', r'< 2097152u'): self.has(msl, pattern)
+        for pattern in (r'>> uint\(21\)', r'& 8191;', r'\+ 6;', r'>> uint\(13\)'):
+            self.has(msl, pattern)
 
     def test_the_bindings_are_the_ones_t_gmem_raw_fills(self):   # storage slot 0 written at word 2 [[id(0)]], the pool table [[id(1)]]
         msl = self.msl()
@@ -598,7 +617,7 @@ def raw_fixture(out):
     """<out>/raw.metallib: RawGlobal's shader, compiled as the build compiles (dmsh_build.py MAC_METAL), for t_gmem_raw. Exit code 77 when the translator does not run"""
     xlate = os.environ.get('DMSH_TEST_XLATE')
     if not xlate or subprocess.run([xlate, '--source-sha'], capture_output=True).returncode: sys.exit(77)
-    msl = Path(out) / 'raw.metal'; msl.write_text(RawGlobal('test_the_search_takes_the_tables_count').msl())
+    msl = Path(out) / 'raw.metal'; msl.write_text(RawGlobal('test_the_search_covers_the_upstream_fixed_table').msl())
     air = Path(out) / 'raw.air'
     subprocess.run(['xcrun', '-sdk', 'macosx', 'metal', '-c', '-O1', '-fpreserve-invariance', str(msl), '-o', str(air)], check=True)
     subprocess.run(['xcrun', '-sdk', 'macosx', 'metallib', str(air), '-o', str(Path(out) / 'raw.metallib')], check=True)

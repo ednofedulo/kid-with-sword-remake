@@ -1,4 +1,4 @@
-// mtl_pool_holds answers whether a range lies in one memory pool as mtl_addr finds it, without making the pool resident: hle_nvn.c keys_hash asks it whether a shader's code is
+// mtl_addr_known answers whether a range lies in one memory pool as mtl_addr finds it, without making the pool resident: hle_nvn.c keys_hash asks it whether a shader's code is
 // mapped, and through mtl_addr every pool holding shader code went into the residency set though the GPU never reads it (Ocarina of Time: 222 pools, 334 MB)
 #include "../nvn/nvn_mtl.m"
 void *front_metal_layer(void) { return NULL; }
@@ -16,16 +16,16 @@ int main(void) { @autoreleasepool {
     uint64_t base = (uint64_t)(uintptr_t)mem;
     mtl_pool_add(mem, n);
     int res0 = g_pool_res_n;
-    CHECK("a range inside the pool is held", mtl_pool_holds(base + 4096, 2048));
-    CHECK("the pool's last bytes are held", mtl_pool_holds(base + n - 16, 16));
-    CHECK("a range past the pool's end is not", !mtl_pool_holds(base + n - 16, 32));
-    CHECK("an address outside every pool is not", !mtl_pool_holds(base + n + 4096, 16));
+    CHECK("a range inside the pool is held", mtl_addr_known(base + 4096, 2048));
+    CHECK("the pool's last bytes are held", mtl_addr_known(base + n - 16, 16));
+    CHECK("a range past the pool's end is not", !mtl_addr_known(base + n - 16, 32));
+    CHECK("an address outside every pool is not", !mtl_addr_known(base + n + 4096, 16));
     CHECK("asking makes no pool resident", g_pool_res_n == res0 && !pool_resident(base));
     void *mb = NULL; uint64_t mo = 0;
     CHECK("mtl_addr finds the same range", mtl_addr(base + 4096, 2048, &mb, &mo) && mo == 4096);
     CHECK("mtl_addr makes the pool resident (what keys_hash did)", g_pool_res_n == res0 + 1 && pool_resident(base));
     mtl_pool_del(mem);
-    CHECK("a removed pool holds nothing", !mtl_pool_holds(base + 4096, 2048));
+    CHECK("a removed pool holds nothing", !mtl_addr_known(base + 4096, 2048));
     printf("t_pool_holds: %d checks, %d failed\n", checks, failed);
     return failed != 0;
 } }

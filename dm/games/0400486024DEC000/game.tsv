@@ -43,7 +43,7 @@ app_pool	0x240000000
 sys_resource	0x3000000
 
 # ---- Shader split ----
-shader_groups	/Shader/=shader /Lib/=lib /Effect/=effect /Layout2Shader/=layout /Movie/=movie
+shader_groups	/Shader/=shader /Effect/=effect /Lib/=lib /UI/=layout
 shader_note	0400486024DEC000 shaders
 
 # ---- Graphics ----
@@ -52,8 +52,7 @@ shader_note	0400486024DEC000 shaders
 render_cond	on
 
 # The RAM swap is upstream's DM_GUEST_FILE (on by itself on iOS when the memory pool does not fit the room to the limit); its memory pools stay anonymous (hle_svc.c dm_guest_pool_anon)
-# Raw global memory: compressible (render-target storage), shader code and GPU no-access pools are kept out of the pool table, which made every pool resident (nvn_mtl.m mtl_pool_noraw)
-gmem_skip	on
+# Raw global memory lists only pools with addresses exposed by the driver (mtl_pool_addressed), refreshed at command-buffer commits.
 # Pool tables give a finalized texture ID with no view the dummy instead of making its texture again: about 2.5 GB at the house-to-forest change (upstream #1393, nvn_mtl.m pool_skip_retired)
 pool_skip_retired	on
 # Guest copies of textures in CPU_NO_ACCESS pools (render and depth targets the game cannot read) given back once their GPU copy exists (upstream #1447, nvn_mtl.m rel_*): about 550 MB outdoors.
@@ -92,3 +91,6 @@ dispatch_overlap	off
 res_presets	on
 frame_wg	off
 present_snap	on
+draw_barriers	game
+tex_flush_upload	on
+tex_dirty_upload	on

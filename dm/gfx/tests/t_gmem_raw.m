@@ -1,5 +1,5 @@
-// A translated load at an address the shader read from memory (GlobalToStorage.TryGenerateRawStorageOp), run on the GPU against the host's own pool table (nvn_mtl.m gmem_map) with more
-// pools than its least count: each probe must read its pool's word, whether the lookup takes the chunk hint (a large pool) or the binary search (small pools past entry 4,096), and an address in
+// A translated load at an address the shader read from memory (GlobalToStorage.TryGenerateRawStorageOp), run on the GPU against the host's own pool table (nvn_mtl.m gmem_map) with 5,000
+// addressed pools: each probe must read its pool's word, whether the lookup takes the chunk hint (a large pool) or the binary search (small pools past entry 4,096), and an address in
 // no pool reads 0. The shader is test_dmsh_ampere_mem.py's RawGlobal one: it loads the address from words 0 and 1 of storage slot 0 and stores what it read at word 2.
 // Usage: t_gmem_raw <metallib>
 #include "../nvn/nvn_mtl.m"
@@ -17,10 +17,10 @@ int main(int argc, const char **argv) { @autoreleasepool {
     const uint64_t MB = 1ull << 20;
     uint8_t *many = mmap(NULL, (size_t)MANY * 2 * PG, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0), *large = mmap(NULL, 64 * MB, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
     if (many == MAP_FAILED || large == MAP_FAILED) abort();
-    for (int i = 0; i < MANY; i++) { uint8_t *p = many + (size_t)i * 2 * PG; mtl_pool_add(p, PG); uint32_t v = 0x10000u + (unsigned)i; memcpy(p + (size_t)(i * 8 % PG), &v, 4); }
-    mtl_pool_add(large, 64 * MB); { uint32_t v = 0xb16b00b5u; memcpy(large + 40 * MB + 12, &v, 4); }
+    for (int i = 0; i < MANY; i++) { uint8_t *p = many + (size_t)i * 2 * PG; mtl_pool_add(p, PG); mtl_pool_addressed(p, PG); uint32_t v = 0x10000u + (unsigned)i; memcpy(p + (size_t)(i * 8 % PG), &v, 4); }
+    mtl_pool_add(large, 64 * MB); mtl_pool_addressed(large, 64 * MB); { uint32_t v = 0xb16b00b5u; memcpy(large + 40 * MB + 12, &v, 4); }
     mtl_sub_begin(); id<MTLBuffer> map = gmem_map(); CHECK("submission completes", mtl_wait(mtl_sub_commit(), 5000000000ull));
-    CHECK("the table holds more than the least count", gmem_entries(map) > DMSH_GMEM_MAP_ENTRIES);
+    CHECK("the fixed table holds all test pools", map.length == DMSH_GMEM_MAP_ENTRIES * DMSH_GMEM_MAP_ENTRY && MANY + 2 < DMSH_GMEM_MAP_ENTRIES);
     NSError *error = nil;
     id<MTLLibrary> lib = [g_dev newLibraryWithURL:[NSURL fileURLWithPath:@(argv[1])] error:&error]; if (!lib) { fprintf(stderr, "library: %s\n", error.description.UTF8String); return 1; }
     id<MTLComputePipelineState> pso = [g_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@"main0"] error:&error]; if (!pso) { fprintf(stderr, "pipeline: %s\n", error.description.UTF8String); return 1; }
@@ -41,10 +41,10 @@ int main(int argc, const char **argv) { @autoreleasepool {
     { int i = MANY - 1; n++; uint64_t p = (uint64_t)(uintptr_t)(many + (size_t)i * 2 * PG); hits += probe(p + (uint64_t)(i * 8 % PG)) == 0x10000u + (unsigned)i; }
     CHECK("small pools, the search: each probe reads its pool", hits == n);
     { uint64_t last = (uint64_t)(uintptr_t)(many + (size_t)(MANY - 1) * 2 * PG); unsigned e = 0;
-      for (unsigned k = 1; k < gmem_entries(map); k++) if (((const uint64_t *)map.contents)[k * (DMSH_GMEM_MAP_ENTRY / 8)] == last) e = k;
-      CHECK("the last small pool lies past the least table", e >= DMSH_GMEM_MAP_ENTRIES); }
+      for (unsigned k = 1; k < DMSH_GMEM_MAP_ENTRIES; k++) if (((const uint64_t *)map.contents)[k * (DMSH_GMEM_MAP_ENTRY / 8)] == last) e = k;
+      CHECK("the last small pool lies past the old 4096-entry limit", e >= 4096); }
     CHECK("a large pool, the hint", probe((uint64_t)(uintptr_t)large + 40 * MB + 12) == 0xb16b00b5u);
     CHECK("an address in no pool reads 0", probe((uint64_t)(uintptr_t)many + PG + 8) == 0);
-    printf("t_gmem_raw: %d checks, %d failed (%u table entries, %d probes)\n", checks, failed, gmem_entries(map), n + 2);
+    printf("t_gmem_raw: %d checks, %d failed (%u table entries, %d probes)\n", checks, failed, DMSH_GMEM_MAP_ENTRIES, n + 2);
     return failed != 0;
 }}

@@ -85,6 +85,8 @@ t_pace: t_pace.c ../nvn/nvn_pace.h
 	clang -O1 -Wall -o $@ t_pace.c
 t_timestamp: t_timestamp.c ../nvn/nvn_timestamp.h
 	$(CC) -std=c11 -O2 -g -Wall -Wextra -Werror -o $@ $<
+t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_counter_clock.m ../../host/hle_os.c $(MTL_T_SRC) $(FW)
 t_fstep: t_fstep.c ../nvn/nvn_fstep.h
 	clang -O1 -Wall -o $@ t_fstep.c
 t_thermal: t_thermal.c $(MTL_T_DEP)
@@ -221,6 +223,8 @@ check_t_present_snap: t_present_snap
 	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_present_snap pacing
 	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_present_snap resize
 	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_present_snap resize
+	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_present_snap queued
+	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_present_snap queued
 t_reorder_chain: t_reorder_chain.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_reorder_chain.m $(MTL_T_SRC) $(FW)
 check_t_reorder_chain: RUN_ENV = MTL_DEBUG_LAYER=1
@@ -418,6 +422,9 @@ t_missing_src1: t_missing_src1.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_missing_src1.m $(MTL_T_SRC) $(FW)
 check_t_integer_blend: RUN_ENV = MTL_DEBUG_LAYER=1
 check_t_missing_src1: RUN_ENV = MTL_DEBUG_LAYER=1
+t_omap_mask: t_omap_mask.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_omap_mask.m $(MTL_T_SRC) $(FW)
+check_t_omap_mask: RUN_ENV = MTL_DEBUG_LAYER=1
 t_primitive_restart: t_primitive_restart.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_primitive_restart.m $(MTL_T_SRC) $(FW)
 check_t_primitive_restart: RUN_ENV = MTL_DEBUG_LAYER=1
@@ -539,3 +546,39 @@ t_gmem_raw: t_gmem_raw.m $(MTL_T_DEP)
 check_t_gmem_raw: t_gmem_raw
 	@set -e; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; rc=0; DMSH_TEST_XLATE=$${DMSH_TEST_XLATE:-$(CURDIR)/../tools/dmsh_xlate_bin/dmsh_xlate} python3 test_dmsh_ampere_mem.py --fixture "$$work" || rc=$$?; \
 	if [ $$rc = 77 ]; then echo "t_gmem_raw: skipped, the translator does not run"; elif [ $$rc != 0 ]; then exit $$rc; else MTL_DEBUG_LAYER=1 ./t_gmem_raw "$$work/raw.metallib"; fi
+
+# Native task/mesh draws must render on the first pipeline use, with direct and threaded Metal encoding.
+t_mesh_first_use: t_mesh_first_use.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_mesh_first_use.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+.PHONY: check_t_mesh_first_use
+check_t_mesh_first_use: t_mesh_first_use
+	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_mesh_first_use
+	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_mesh_first_use
+
+t_wait_event: t_wait_event.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_wait_event.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+
+t_queue_lifetime: t_queue_lifetime.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_queue_lifetime.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+
+.PHONY: check_t_wait_event check_t_queue_lifetime
+check_t_wait_event: t_wait_event
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./$<
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./$<
+check_t_queue_lifetime: t_queue_lifetime
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./$<
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./$<
+
+t_render_enable_queue: t_render_enable_queue.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_render_enable_queue.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+.PHONY: check_t_render_enable_queue
+check_t_render_enable_queue: t_render_enable_queue
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./$<
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./$<
+
+t_render_counter_overlap: t_render_counter_overlap.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_render_counter_overlap.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+.PHONY: check_t_render_counter_overlap
+check_t_render_counter_overlap: t_render_counter_overlap
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./$<
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./$<

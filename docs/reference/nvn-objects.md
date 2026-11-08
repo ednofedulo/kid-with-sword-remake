@@ -482,6 +482,14 @@ Games read this count as a position in their own command memory and size their h
 - **Found on:** [Rhythm Heaven Groove](../../dm/games/0100D9F01D474000/README.md) (SDK 21.4.0): the sprite shader (`40adb3021c79b155`) computes texture × colour multiply + colour add and discards a fragment whose alpha is 0 (the `CBDUMP`: multiply 1, add 0); 245 pools by the first screens, each holding one texture at offset 0, 17 block-linear BC7 (flag `IMAGE`, no packaged layout) and 228 linear R8 (`IMAGE | LINEAR`).
 - **Check:** found by a census of every texture's pool flags, flags, format and whether its storage held data at creation (a temporary line under `DM_NVN_LOG`).
 
+### Uploaded textures recreated after guest pages were discarded
+
+- **Symptom:** `[RED] texture made again over released storage`, followed by missing or black texture content after an upload or scene change.
+- **Cause:** the fork discarded initialized guest pages after their first GPU upload. NVN preserves the memory pool's initialized bytes. Retiring a descriptor view, a storage alias or a host texture can require another upload, including for the same texture serial. The donor lookup excluded that same-serial case and could also outlive its donor. The recreated texture therefore read zero pages, even though the game had not changed the storage.
+- **Fix:** retain initialized guest storage, following upstream's texture lifetime model. Remove the upload-completion page discard and donor recovery path rather than depending on a surviving GPU cache entry. The game's memory-pool finalization controls the storage lifetime. The legacy `tex_release` profile setting and `DM_TEX_RELEASE`, `DM_TEX_RELEASE_METHOD` and `DM_TEX_REL_DONOR` switches are removed from the renderer.
+- **Check:** `t_cpu_storage` uploads a texture spanning whole host pages, compares every initialized guest byte afterward, finalizes it and verifies that a new texture over the same storage has the original GPU pixels. The previous discard path failed three checks.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game), during validation of the upstream merge.
+
 ### `COMPRESSIBLE` in a pool the CPU writes is only a hint
 
 - **Symptom:** a game draws its UI and text but every image is black; `packaged textures: first uploads 0` while `TextureInitialize` counts the textures the game created (SD GUNDAM G GENERATION CROSS RAYS: 74, of which the 10 BC3 ones hold data and none is uploaded). After the fill works, one overlay still comes up with its text over nothing: the panel's background is missing and the text of the next block sits on top of it.

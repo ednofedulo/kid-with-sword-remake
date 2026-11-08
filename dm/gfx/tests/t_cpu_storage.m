@@ -68,6 +68,22 @@ int main(void) {
     @autoreleasepool {
         mtl_init();
         fixture f;
+        // NVN keeps the initialized pool bytes after an upload. A later texture over the same storage must still see them, even after the first GPU texture is finalized.
+        setup(&f, 7100, CACHED, NVN_FORMAT_RGBA8, 0);
+        tex_t retained = texture_at(&f, 7101, 0x40000, LARGE, NVN_FORMAT_RGBA8, 0);
+        fill(&retained, retained.mem, 55);
+        size_t retained_size = retained.L.size;
+        uint8_t *original = malloc(retained_size); memcpy(original, retained.mem, retained_size);
+        mtl_tex_init(&retained);
+        CHECK("large initialized texture uploads its content", first_red(resolve(&retained)) == 55);
+        CHECK("completed upload preserves every initialized guest byte", !memcmp(original, retained.mem, retained_size));
+        mtl_tex_release(&retained);
+        tex_t recreated = texture_at(&f, 7102, 0x40000, LARGE, NVN_FORMAT_RGBA8, 0);
+        mtl_tex_init(&recreated);
+        CHECK("a later texture over the storage keeps the original pixels", first_red(resolve(&recreated)) == 55);
+        CHECK("recreating the texture preserves the initialized pool bytes", !memcmp(original, recreated.mem, retained_size));
+        mtl_tex_release(&recreated); free(original); teardown(&f);
+
         setup(&f, 7001, CACHED, NVN_FORMAT_RGBA8, 0);
         fill(&f.t, f.mem, 40);
         mtl_tex_init(&f.t);

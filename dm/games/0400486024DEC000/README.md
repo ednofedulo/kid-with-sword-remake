@@ -80,6 +80,9 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
 
 ## Found on this game
 
+
+- [Uploaded textures recreated after guest pages were discarded](../../../docs/reference/nvn-objects.md#uploaded-textures-recreated-after-guest-pages-were-discarded): retain the pool bytes through host texture recreation.
+
 - [Position invariance across shaders](../../../docs/reference/shaders.md#position-invariance-across-shaders): white shapes on plants and bushes for single frames in Kokiri Forest, from the foliage's mesh pre-pass and mesh colour pass rounding the position apart.
 - [An old NUP cache stamp makes the build unpack again](../../../docs/reference/packing.md#an-old-nup-cache-stamp-makes-the-build-unpack-again): after a packer update the v131072 image is checked against the NUP in 21.6 s and kept, instead of unpacked again.
 - [Uncompressed storage beside storage the GPU writes](../../../docs/reference/nvn-objects.md#uncompressed-storage-beside-storage-the-gpu-writes): resolved, the ground opening in holes after walking out of a cave and back (the terrain's height and blend maps came out as zeros once the first normal map had been drawn into their pool); a reload had hidden it.
@@ -139,3 +142,5 @@ This fork keeps its Native and Forest touch controls, resolution presets, 30/60 
 The SDK 22 `IsOunceVibrationDeviceMounted` hook from PR #2 remains present; see [Whether a vibration device is mounted](../../../docs/reference/services.md#whether-a-vibration-device-is-mounted).
 
 The upstream addressed-pool tracking and commit-time table refresh replace the fork's older raw-memory filters and dynamic table. The obsolete `gmem_skip` / `gmem_nobig` profile overrides and `DM_NVN_GMEM_ALL` diagnostic are removed. The merged ABI has 8,192 entries; host and shader libraries must use the same chain.
+
+The integrated renderer retains guest texture storage. The fork's upload-completion page discard and GPU-donor recovery were removed after the startup check reproduced texture recreation from zeroed pages; this follows upstream's texture lifetime semantics.

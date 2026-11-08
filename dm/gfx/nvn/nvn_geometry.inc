@@ -562,6 +562,26 @@ static id<MTLFunction> mtk_nop_fragment(void) {
         fn = [l newFunctionWithName:@"dm_mesh_nop"]; if (!fn) MLOG("[RED] the empty fragment function did not compile: %s", e.localizedDescription.UTF8String); });
     return fn;
 }
+static id<MTLRenderPipelineState> mtk_build(const pso_key *k, NvShader *ts, NvShader *ms, NvShader *fs, NSError **error) {
+    MTLRenderPipelineDescriptor *d = pso_desc(k, nil, fs, nil, 0);
+    if (!pso_ds_valid((uint32_t)d.depthAttachmentPixelFormat, (uint32_t)d.stencilAttachmentPixelFormat)) return nil;
+    MTLMeshRenderPipelineDescriptor *m = [MTLMeshRenderPipelineDescriptor new];
+    m.meshFunction = ms->fn; m.fragmentFunction = d.fragmentFunction ?: mtk_nop_fragment(); m.maxTotalThreadsPerMeshThreadgroup = ms->mesh_threads;
+    if (ts) { m.objectFunction = ts->fn; m.payloadMemoryLength = (ts->mesh_payload + 15u) & ~15u; m.maxTotalThreadsPerObjectThreadgroup = ts->mesh_threads; }
+    m.rasterSampleCount = d.rasterSampleCount; m.alphaToCoverageEnabled = d.alphaToCoverageEnabled;
+    for (int i = 0; i < 8; i++) m.colorAttachments[i] = d.colorAttachments[i];
+    m.depthAttachmentPixelFormat = d.depthAttachmentPixelFormat; m.stencilAttachmentPixelFormat = d.stencilAttachmentPixelFormat;
+    return [g_dev newRenderPipelineStateWithMeshDescriptor:m options:MTLPipelineOptionNone reflection:nil error:error];
+}
+static void mtk_bind_key(pso_key *k, NvShader *ts, NvShader *ms, NvShader *fs) {
+    k->vs = (__bridge void *)ms; k->fs = (__bridge void *)fs;
+    k->fsfn = (__bridge void *)(ts ? ts->fn : ms->fn);   // the task or mesh function occupies the key's third-function slot
+}
+static void mtk_claim(pso_key *k, NvShader *ts, NvShader *ms, NvShader *fs, id<MTLRenderPipelineState> ps) {
+    mtk_bind_key(k, ts, ms, fs);
+    id current = hm_get_id(&g_pso_mtk, k);
+    if (!current || current == NSNull.null) hm_put_id(&g_pso_mtk, k, ps);
+}
 static id<MTLRenderPipelineState> mtk_pso(NvProg *raster) {
     NvShader *ts = g_mtk.ts, *ms = g_mtk.ms, *fs = raster->sh[1];
     pso_key k; pso_key_fill(&k, ms, fs, g_pass.cfmt, g_pass.dfmt, g_pass.sfmt, g_pass.samples, 0);
@@ -569,15 +589,8 @@ static id<MTLRenderPipelineState> mtk_pso(NvProg *raster) {
     k.fsfn = (__bridge void *)(ts ? ts->fn : ms->fn);   // with ms in the key's vertex place: the task shader is the third of the pipeline's functions
     id ps = hm_get_id(&g_pso_mtk, &k);
     if (ps) return ps == NSNull.null ? nil : ps;
-    MTLRenderPipelineDescriptor *d = pso_desc(&k, ms, fs, nil, 0);
-    MTLMeshRenderPipelineDescriptor *m = [MTLMeshRenderPipelineDescriptor new];
-    m.meshFunction = ms->fn; m.fragmentFunction = d.fragmentFunction ?: mtk_nop_fragment(); m.maxTotalThreadsPerMeshThreadgroup = ms->mesh_threads;
-    if (ts) { m.objectFunction = ts->fn; m.payloadMemoryLength = (ts->mesh_payload + 15u) & ~15u; m.maxTotalThreadsPerObjectThreadgroup = ts->mesh_threads; }
-    m.rasterSampleCount = d.rasterSampleCount; m.alphaToCoverageEnabled = d.alphaToCoverageEnabled;
-    for (int i = 0; i < 8; i++) m.colorAttachments[i] = d.colorAttachments[i];
-    m.depthAttachmentPixelFormat = d.depthAttachmentPixelFormat; m.stencilAttachmentPixelFormat = d.stencilAttachmentPixelFormat;
     NSError *e = nil; uint64_t start = bp_now();
-    id<MTLRenderPipelineState> p = [g_dev newRenderPipelineStateWithMeshDescriptor:m options:MTLPipelineOptionNone reflection:nil error:&e];
+    id<MTLRenderPipelineState> p = mtk_build(&k, ts, ms, fs, &e);
     uint64_t elapsed = bp_now() - start;
     g_bp_pso_n++; g_bp_pso_ns += elapsed;
     const char *task = ts ? ts->key : "-";

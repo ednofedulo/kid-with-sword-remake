@@ -55,7 +55,6 @@ fps_target	60
 # agl wraps its depth clears in render conditions, as on Donkey Kong Bananza and Splatoon Raiders: in Kokiri Forest the main opaque pass tests EQUAL against a copy of the prepass depth
 # that a conditional clear (skipped on the console) wiped first, so no lit geometry landed and the full-screen sky showed through everywhere (a white scene)
 render_cond	on
-
 # The RAM swap is upstream's DM_GUEST_FILE (on by itself on iOS when the memory pool does not fit the room to the limit); its memory pools stay anonymous (hle_svc.c dm_guest_pool_anon)
 # Raw global memory lists only pools with addresses exposed by the driver (mtl_pool_addressed), refreshed at command-buffer commits.
 # Pool tables give a finalized texture ID with no view the dummy instead of making its texture again: about 2.5 GB at the house-to-forest change (upstream #1393, nvn_mtl.m pool_skip_retired)
@@ -80,9 +79,7 @@ fps_target	60
 pad_layout	native
 # The touch controls' Forest colours: blue A, green B, yellow X / Y, red +, deep green shoulders, bronze D-pad, gold rims, all translucent (DmGamepad.m theme_init)
 pad_theme	forest
-# Dynamic resolution reads the GPU time between the frame's timestamp reports, as on Donkey Kong Bananza and Breath of the Wild (the same EPD engine family): with one time a submission it
-# read about 0 and kept the full 1440x810 at 20-24 ms of GPU a frame on a MacBook Air M5. Each report takes its segment's GPU start / end (nvn_mtl.m rep_ticks)
-gpu_timestamps	segment
+# Dynamic resolution reads the GPU time between the frame's timestamp reports; the host reports segment time by default (nvn_mtl.m rep_ticks).
 # The game upscales through a chain: agl_ndsr_vr feature pass, network and blend at the render size, agl_ndsr_vr_light scale to 1920x1080. DM_UPSCALER=metalfx skips the chain for MetalFX (nvn_mtl.m up_chain)
 upscaler_chain	f8965bffbdf51d78,d17eefaff4f0bc23,a335c1db6270c355>aad7ea7e5c02f41d|b106afba1a18faa9|fa3033d05c0a41d6|04135bb812a0d66e|8df148d58b7cbe8e
 # Colour render targets drawn only as attachments (RGBA8 / BGRA8 / RGBA16F) kept with Metal lossy compression (rt_lossy, nvn_mtl.m rt_lossy): about 100 MB less in Link's house at 720p;

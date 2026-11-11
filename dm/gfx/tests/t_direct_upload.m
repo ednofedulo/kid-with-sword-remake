@@ -30,6 +30,7 @@ static void run(int target,unsigned width,unsigned height,unsigned layers,unsign
         int fast=direct&&!(source_offset&7)&&nvn_deswz_gpu_direct_supported(&t.d);CHECK("direct upload selected only when eligible",g_direct_uploads-uploads==(uint64_t)fast);CHECK("one dispatch per mip across all faces",g_direct_dispatches-dispatches==(fast?levels:0));
         if(!round)first=image;else CHECK("pending/read texture is not overwritten",image!=previous);
         if(round==2)CHECK("idle spare texture is reused",image==first);previous=image;
+        up_wait_zero(&g_up_pending,WS_OLDQ);   // a dropped batch is reported by its completion handler, after the submission's fence
         if(atomic_load(&g_up_lost_n)) {
             uint64_t recovered=atomic_load(&g_up_lost_redo);mtl_sub_begin();image=tex_mtl(&t);finish();
             CHECK("direct target participates in dropped-upload recovery",atomic_load(&g_up_lost_redo)==recovered+1);CHECK("dropped upload marker consumed",!atomic_load(&g_up_lost_n));first=image;previous=image;
@@ -37,7 +38,7 @@ static void run(int target,unsigned width,unsigned height,unsigned layers,unsign
         if(!round&&direct){
             tex_t initial=t;initial.has_layout=0;initial.serial+=100000;
             id<MTLTexture> control=[g_dev newTextureWithDescriptor:tex_desc(&initial,0)];res_add(control);uint64_t n=g_direct_uploads;
-            mtl_sub_begin();CHECK("initial fill retains its original texture",tex_init_fill(&initial,control));finish();CHECK("initial fill does not require new write/view usage",g_direct_uploads==n);defer_obj_release(control);
+            mtl_sub_begin();CHECK("initial fill retains its original texture",tex_init_fill(&initial,control,0));finish();CHECK("initial fill does not require new write/view usage",g_direct_uploads==n);defer_obj_release(control);
         }
         memset(readback.contents,0xcd,readback.length);id<MTLCommandBuffer> cb=q_cb();id<MTLBlitCommandEncoder> ce=[cb blitCommandEncoder];off=0;
         for(unsigned l=0;l<levels;l++)for(unsigned a=0;a<layers;a++) {

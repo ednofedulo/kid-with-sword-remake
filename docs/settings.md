@@ -291,3 +291,6 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under 
 | Performance HUD | `DM_METAL_HUD` | `1`, `0` |
 
 `DM_LAUNCHER=0` skips the settings screen; the choices you saved there still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults and keeps your saved choices for later. How the settings are listed for each game: [dm/games/settings.tsv](../dm/games/settings.tsv).
+
+
+Frame generation is optional on NVN games and supported MetalFX hardware. At a 30 fps cap, it can display an interpolated picture between real frames; game input and simulation still run at the real frame rate. It adds GPU work and can smear fast movement. **Frame generation size** appears while it is enabled: **Lighter** uses a lower interpolation resolution and a softer upscaled picture, including the HUD. Both settings take effect at the next start.

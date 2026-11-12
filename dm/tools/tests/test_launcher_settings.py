@@ -46,6 +46,13 @@ class LauncherSettingsTests(unittest.TestCase):
                 self.assertEqual((s['kind'], s['section'], s['default']), ('choice', 'Game', 'off'))
                 self.assertEqual(s['options'], [['off', 'Standard'], ['metalfx', 'MetalFX']])
 
+    def test_frame_generation_is_opt_in_and_depends_on_the_30_fps_cap(self):
+        rows = build(BOTW, 'nvn')
+        self.assertEqual(rows['DM_FRAMEGEN']['default'], '0')
+        self.assertEqual(rows['DM_FRAMEGEN']['needs'], 'DM_FPS_TARGET=30')
+        self.assertEqual(rows['DM_FRAMEGEN_SCALE']['needs'], 'DM_FRAMEGEN=1')
+        self.assertNotIn('DM_FRAMEGEN', build('0100535012974000', 'vulkan'))
+
     def test_frame_buffering_by_graphics_api(self):
         for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000'), ('', BOTW)]:
             with self.subTest(api=api):

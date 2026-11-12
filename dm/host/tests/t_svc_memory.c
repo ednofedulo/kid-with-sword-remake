@@ -581,6 +581,15 @@ static void layout_order(void) {
     assert(info(I_AslrAddr) == (uint64_t)(uintptr_t)g_as && info(I_AslrSize) == g_reserve);
 }
 int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1], "--pool-cap-probe")) {
+        setenv("DM_GUEST_FILE", "1", 1); setenv("DM_POOL_ANON_MAX_MB", "1", 1);
+        mem_init(); assert(g_gf_n && resize(0x400000) == 0);
+        uint8_t *p = (uint8_t *)(uintptr_t)info(I_HeapAddr); p[0] = 0x5a; p[0x100000] = 0xa5;
+        dm_guest_pool_anon(p, 0x200000); assert(!g_nanon);   // above the cap: remains file-backed
+        dm_guest_pool_anon(p, 0x100000); assert(g_nanon == 1);   // exactly the cap: existing anonymous behavior
+        assert(p[0] == 0x5a && p[0x100000] == 0xa5);
+        puts("pool anonymous-memory cap passed"); return 0;
+    }
     if (argc == 2 && !strcmp(argv[1], "--heap-probe")) {
         mem_init();
         assert(resize(g_heap_cap + 0x200000) == OOM);

@@ -1,0 +1,10 @@
+# Fresh-save title/movie route. Animated pictures are inspected separately, not compared as stationary screenshots.
+# This checks boot, frame progress and the warm title workload; it does not cover gameplay or area transitions.
+save	new
+keys	0:L0/0
+secs	60
+quick	20
+reach	120@15
+window	35	20
+hang	30
+prebuild	off

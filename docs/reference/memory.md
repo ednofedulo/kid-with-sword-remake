@@ -4,6 +4,15 @@ The guest address space, heaps, pools, virtual address memory and the allocators
 
 ## Guest layout
 
+
+### Large memory pools kept in guest files
+
+- **Symptom:** file-backed guest memory still leaves a high anonymous footprint after a large pool is initialized.
+- **Cause:** `dm_guest_pool_anon` normally moves a pool's whole range from the guest files into anonymous memory, including pages that the GPU has not reached.
+- **Option:** `DM_POOL_ANON_MAX_MB=<MB>` keeps a larger pool in its guest files; zero or unset retains existing behavior, and a pool exactly at the threshold still becomes anonymous. It has no effect without file-backed guest memory. This is a memory/I/O tradeoff, not a guaranteed frame-rate gain. The current addressed-pool/chunk tracking remains in use; obsolete fork raw-memory filters are not restored.
+- **Check:** `t_svc_memory --pool-cap-probe`, with UBSan: above threshold, exact threshold, and initialized bytes retained.
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#fork-performance-integration-current); adapted from cheemu21 `e8ce0841`.
+
 ### The Mac's alias region is the Switch's 64 GB
 
 - **Symptom:** on the Mac, a game crashes once its address regions pass the profile's alias region: at launch (Trails in the Sky 1st Chapter: `sig=11 addr=0x1` at `sdk+0x15576c`, after an 11.27 GB region at alias +1.00 GB) or a little later (Just Dance: a null allocation past 4.375 GB after about 40 s, then a crash at `main+0x639ab0`), though the build's address region check reports a larger reach. A provisional profile's red line `past the profile's … alias region, the iPhone layout` says the same. Tears of the Kingdom's long-session memory-shortage Blood Moon (`[game] MSF / R / Rf` after about 87 minutes at +2.25 of 2.38 GB, issue #639) may be this too: not confirmed by a long session, and a mark near the top alone [is not exhaustion](#an-alias-high-water-mark-near-the-top-is-not-exhaustion).

@@ -22,7 +22,9 @@ static void put(NSString *dir, NSString *name, NSString *text) {
     if (![text writeToFile:[dir stringByAppendingPathComponent:name] atomically:YES encoding:NSUTF8StringEncoding error:nil]) { printf("cannot write %s\n", name.UTF8String); exit(2); }
 }
 
-int main(void) { @autoreleasepool {
+int main(int argc, char **argv) { @autoreleasepool {
+    int cache_only = argc > 1 && !strcmp(argv[1], "cache-only");
+    if (cache_only) setenv("DM_PSO_WARM_ONLY", "1", 1);
     char tmpl[] = "/tmp/t_shmap_warm.XXXXXX";
     if (!mkdtemp(tmpl)) { perror("mkdtemp"); return 2; }
     NSString *dir = @(tmpl);
@@ -36,6 +38,13 @@ int main(void) { @autoreleasepool {
 
     shmap_read_once();   // what the prefetch does at the game's first program
     EXPECT_EQ("the map is read without starting the prewarm", 0, g_warm_started);
+    if (cache_only) {
+        warm_load_begin(); WarmTask *task = [WarmTask new]; task->kind = 0; task->key = @"not-a-shader";
+        long done = g_warm_done; warm_task(task);
+        EXPECT_EQ("cache-only prewarm skips standalone shader loads", 0, g_warm_dict.count);
+        EXPECT_EQ("the skipped shader is counted", done + 1, g_warm_done);
+        EXPECT_EQ("no resident item was queued", 0, g_warm_items.count);
+    }
 
     warm_enqueue([WarmItem new]);   // a library the prefetch finished before the first submission
     EXPECT_EQ("an item finished before the prewarm starts is kept", 1, g_warm_items.count);

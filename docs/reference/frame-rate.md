@@ -4,6 +4,24 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 
 ## Frame step
 
+
+### Idle GPU frames after a loading screen raise the hold
+
+- **Symptom:** after a warm-start prepare, a game stays at a long frame hold although the following scene fits a shorter GPU interval.
+- **Cause:** CPU loading/progress work counts toward the three late frames that increase the hold. A self-paced game then measures its hold as work, preventing the usual fit trial.
+- **Fix:** callers report whether GPU timing is available. Isolated late frames with an idle GPU do not raise the hold; a sustained CPU-heavy run still does. A longer hold with GPU time fitting a shorter interval and no measured pacing wait is probed, with a growing hold-off after failed probes. Existing screen feedback, cap references and probe grace remain in place.
+- **Check:** `t_fstep` includes idle loading, sustained CPU load, self pacing and failed-probe spacing.
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#fork-performance-integration-current); adapted from cheemu21 `9dad0f8f`, upstream PR #1942.
+
+### Frame generation between held presents
+
+- **Symptom:** a game held at 30 fps shows each real picture for two 60 Hz refreshes.
+- **Option:** `DM_FRAMEGEN=1` enables MetalFX interpolation from presented snapshots; off by default and refused on unsupported GPUs. A real frame is preceded by its interpolated half frame, so the displayed cadence can be 60 pictures/s while game simulation stays at 30 frames/s. The display link stays at 60 Hz. Interpolation adds GPU work and delay; this is not native 60 fps.
+- **Inputs:** motion estimated from the two pictures, with still detailed pixels preserved for the HUD; `DM_FRAMEGEN_MV=0` supplies zero motion. `DM_FRAMEGEN_SCALE` lowers snapshot/interpolation resolution (0.5–1, default 1), then scales the picture back for display. Fast motion and occlusion can still produce artifacts.
+- **Pacing:** repeated drops stop interpolation until a steady run returns, with increasing recovery intervals. Generated and real presents use separate allocators. Snapshot resources have their own residency set, so normal display-link callbacks do not commit the submitting thread's set. Queue pins are transferred to the owed real picture and released when it is shown or discarded; snapshot-copy receipts retain their current semantics.
+- **Check:** `check_t_framegen` exercises moving/still pixels, crops, resizing, reduced resolution, held/late presents, recovery and allocator independence under a blocked GPU. Existing present-snapshot and link tests cover the disabled path.
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#fork-performance-integration-current); adapted from cheemu21 `7979a465` and `c73064ee`. Sustained device play and latest-fork X12 visual quality remain unvalidated here.
+
 ### Frame cap checked and used from the same sample
 
 - **Symptom:** clang reports division by zero in `fstep_tick` (`hle_nvn.c`).

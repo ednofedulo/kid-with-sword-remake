@@ -542,6 +542,11 @@ void dm_guest_pool_anon(void *mem, size_t size) {
     if (!g_gf_n || !mem || !size) return;
     static int on = -1; if (on < 0) { const char *e = getenv("DM_POOL_ANON"); on = !e || !*e || atoi(e); if (!on) LOG("[mem] memory pools stay in the guest files (DM_POOL_ANON=0)"); }
     if (!on) return;
+    // Large pools can stay file-backed so only the chunks the GPU reaches are wired, instead of moving the entire pool into the iOS footprint.
+    static uint64_t cap = UINT64_MAX;
+    uint64_t limit = __atomic_load_n(&cap, __ATOMIC_RELAXED);
+    if (limit == UINT64_MAX) { const char *e = getenv("DM_POOL_ANON_MAX_MB"); unsigned long long mb = e ? strtoull(e, NULL, 10) : 0; limit = mb <= (UINT64_MAX >> 20) ? (uint64_t)mb << 20 : 0; __atomic_store_n(&cap, limit, __ATOMIC_RELAXED); }
+    if (limit && size > limit) return;
     size_t pg = (size_t)getpagesize(); uintptr_t lo = (uintptr_t)mem & ~(pg - 1), hi = ((uintptr_t)mem + size + pg - 1) & ~(pg - 1);
     if (lo < (uintptr_t)g_as || hi > (uintptr_t)g_as + g_reserve) return;   // not guest memory
     pthread_mutex_lock(&g_anon_mu);

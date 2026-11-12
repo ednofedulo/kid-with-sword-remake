@@ -626,7 +626,7 @@ class IpaFallback(unittest.TestCase):
             (Path(d) / 'bin').mkdir(); stub = Path(d) / 'bin/python3'; stub.write_text('#!/bin/sh\n' + python); stub.chmod(0o755)
             (Path(d) / 'shader_pairs.tsv').write_text('v\tf\n')
             env = dict(os.environ, PATH=f'{d}/bin:{os.environ["PATH"]}', W=d, GD=d, GAME='G', DM='dm', MSL_IOS='m', V='0', GPUS='g18p', GFXAPI='nvn')
-            script = 'die() { echo "FAIL: $*"; exit 1; }\nt() { echo "$*"; }\nDM_PSO_IOS_MIN=\n' + '\n'.join(lines[i:j]) + '\nfi\necho "PSO=[$PSO]"\n[ -d "$W/build/ios/pso/bundle" ] && echo folder\necho went on\n'
+            script = 'die() { echo "FAIL: $*"; exit 1; }\nt() { echo "$*"; }\nDM_PSO_IOS_MIN=\n' + '\n'.join(lines[i:j]) + '\nfi\necho "PSO=[$PSO]"\n[ -d "$W/build/ios/pso/bundle" ] && echo folder\n[ ! -f "$PSO/applegpu_g18p.mtl4x" ] || od -An -tx1 -N4 "$PSO/applegpu_g18p.mtl4x"\necho went on\n'
             return subprocess.run(['bash', '-c', 'set -u\n' + script], env=env, capture_output=True, text=True).stdout
 
     def test_failed_archive_is_a_warning(self):
@@ -635,8 +635,9 @@ class IpaFallback(unittest.TestCase):
         self.assertNotIn('FAIL', out)
 
     def test_made_archive_goes_into_the_app(self):
-        out = self.step('mkdir -p "$W/build/ios/pso/bundle"; exit 0\n')
-        self.assertNotIn('[RED]', out); self.assertIn('/build/ios/pso/bundle]', out); self.assertIn('folder', out)
+        out = self.step('mkdir -p "$W/build/ios/pso/bundle"; printf "\\317\\372\\355\\376payload" > "$W/build/ios/pso/bundle/applegpu_g18p.mtl4a"; exit 0\n')
+        self.assertNotIn('[RED]', out); self.assertNotIn('FAIL', out)
+        self.assertIn('/build/ios/pso/app]', out); self.assertIn('44 4d 50 41', ' '.join(out.split()))   # DMPA, not a Mach-O to sign
 
 
 class Default(unittest.TestCase):

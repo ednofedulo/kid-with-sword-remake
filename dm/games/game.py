@@ -219,14 +219,11 @@ def header_one(g):
     if gms not in ('on', 'off'): sys.exit(f'{g.id}: gmem_skip must be on or off: {gms}')
     gml = g.get('gmem_lazy', 'off')   # the raw global memory pool table lists resident pools only (nvn_mtl.m gmem_lazy): on / off
     if gml not in ('on', 'off'): sys.exit(f'{g.id}: gmem_lazy must be on or off: {gml}')
-    rcd = g.get('render_cond', 'off')   # NVN conditional rendering evaluated at replay, timestamp reports with counter 0 (nvn_mtl.m OP_RENDER_COND): on / off
-    if rcd not in ('on', 'off'): sys.exit(f'{g.id}: render_cond must be on or off: {rcd}')
     trl = g.get('tex_release', 'off')   # guest copies of uploaded textures given back once on the GPU (nvn_mtl.m rel_mode; DM_TEX_RELEASE overrides): 1 = CPU_NO_ACCESS pools, 2 = also CPU-visible ones
     if trl not in ('off', '1', '2'): sys.exit(f'{g.id}: tex_release must be off, 1 or 2: {trl}')
     psr = g.get('pool_skip_retired', 'off')   # pool tables give a retired texture ID without a view the dummy instead of a texture made again (nvn_mtl.m pool_gpu; DM_NVN_POOL_SKIP_RETIRED overrides): on / off
     if psr not in ('on', 'off'): sys.exit(f'{g.id}: pool_skip_retired must be on or off: {psr}')
-    dov = g.get('dispatch_overlap', 'off')   # the game's dispatches with no barrier of its between them run side by side in the copy encoder (nvn_mtl.m dispatch_enc; DM_NVN_DISPATCH_OVERLAP overrides): on / off
-    if dov not in ('on', 'off'): sys.exit(f'{g.id}: dispatch_overlap must be on or off: {dov}')
+    if g.get('render_cond', ''): print(f'{g.id}: render_cond is ignored: the host evaluates NVN conditional rendering for every game', file=sys.stderr)   # a profile written before the key went (a build folder's derived one)
     tfu = g.get('tex_flush_upload', 'off')   # textures written by the CPU into a pool and published with nvnMemoryPoolFlushMappedRange are uploaded like packaged ones (hle_nvn.c): on / off
     if tfu not in ('on', 'off'): sys.exit(f'{g.id}: tex_flush_upload must be on or off: {tfu}')
     tdu = g.get('tex_dirty_upload', 'off')   # with tex_flush_upload: a registered texture the CPU writes after init without any flush is uploaded too (dirty pages, hle_nvn.c nvn_ft_written): on / off
@@ -295,7 +292,6 @@ def header_one(g):
          f'#define DM_GAME_PERF_BOOST {int(pm == "boost")}',
          f'#define DM_GAME_TEX_FLUSH_UPLOAD {int(tfu == "on")}',
          f'#define DM_GAME_SHADER_KEY_SKIP_OFF {sko:#x}', f'#define DM_GAME_SHADER_KEY_SKIP_LEN {skl:#x}',
-         f'#define DM_GAME_RENDER_COND {int(rcd == "on")}',
          f'#define DM_GAME_GMEM_LAZY {int(gml == "on")}',
          f'#define DM_GAME_GMEM_SKIP {int(gms == "on")}',
          f'#define DM_GAME_GMEM_NOBIG {int(gmb == "on")}',
@@ -309,7 +305,6 @@ def header_one(g):
          f'#define DM_GAME_RT_LOSSY {int(rtl == "on")}',
          f'#define DM_GAME_POOL_SKIP_RETIRED {int(psr == "on")}',
          f'#define DM_GAME_TEX_RELEASE {0 if trl == "off" else int(trl)}',
-         f'#define DM_GAME_DISPATCH_OVERLAP {int(dov == "on")}',
          f'#define DM_GAME_TEX_DIRTY_UPLOAD {int(tdu == "on")}',
          f'#define DM_GAME_TEX_DYN_SLOTS {int(tds == "on")}',
          f'#define DM_GAME_DRAW_BARRIERS_GAME {int(dbr == "game")}',

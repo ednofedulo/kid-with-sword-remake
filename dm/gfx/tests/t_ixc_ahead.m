@@ -46,6 +46,8 @@ static unsigned run_(prog_t *pg, uint8_t *pool, int overlap, int opener, uint64_
     h_nvnCommandBufferDrawArraysIndirect(&cb, (NVNdrawPrimitive)QUADS, (uint64_t)(uintptr_t)second);
     }
     NVNcommandHandle handle = h_nvnCommandBufferEndRecording(&cb);
+    uint8_t *commands = nvn_rec_linear(handle, NULL);
+    uint64_t linear_handle = (uint64_t)(uintptr_t)commands;
 
     static tex_t keep_rt; static __strong id<MTLTexture> keep_out;   // the opener runs draw into one target, as a game's main pass does frame after frame (ixc_learn keys on it)
     tex_t rt = {.magic = MAGIC('T', 'E', 'X', 0), .serial = opener && keep_rt.serial ? keep_rt.serial : nvn_new_serial()};
@@ -59,12 +61,13 @@ static unsigned run_(prog_t *pg, uint8_t *pool, int overlap, int opener, uint64_
     [out replaceRegion:MTLRegionMake2D(0, 0, PIXELS, PIXELS) mipmapLevel:0 withBytes:pixels bytesPerRow:PIXELS * 4];
     state_reset(); memset(&R, 0, sizeof R);
     atomic_fetch_add(&g_cur_frame, 1);   // each run is a frame of its own (ixc_pass_opened counts passes per frame)
-    mtl_sub_begin(); mtl_sub_index(&handle, 1);
+    mtl_sub_begin(); mtl_sub_index(&linear_handle, 1);
     R.has_rt = 1; R.rt.n = 1; R.rt.color[0] = &rt;
     S.ds.dt = S.ds.dw = S.ds.st = 0; S.poly.cull = 0; S.color.blend_en = 0; S.chmask.mask = 0xffff;
     uint64_t s0 = g_ixc_splits;
-    mtl_exec((const uint8_t *)(uintptr_t)handle);
+    mtl_exec(commands);
     CHECK(mtl_wait(mtl_sub_commit(), 10000000000ull) && !mtl_last_commit_error(), "the submission completes");
+    free(commands);
     *splits = g_ixc_splits - s0;   // after the commit: a pass may be deferred and encoded there (g_defer)
     [out getBytes:pixels bytesPerRow:PIXELS * 4 fromRegion:MTLRegionMake2D(0, 0, PIXELS, PIXELS) mipmapLevel:0];
     if (!opener) mtl_tex_release(&rt);

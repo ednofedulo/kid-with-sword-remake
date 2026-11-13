@@ -17,7 +17,7 @@ static tex_t target(pool_t *pool, uint64_t serial, int64_t off, unsigned w) {
     nvn_tex_layout(&t.d, &t.L); mtl_tex_init(&t); return t;
 }
 static void submissions(int n) { for (int i = 0; i < n; i++) { mtl_sub_commit(); mtl_drain(); mtl_sub_begin(); } dispatch_sync(g_feedback_q, ^{}); defer_drain(); }
-static int in_table(id<MTLTexture> t) { pthread_mutex_lock(&g_smu); int r = alias_has(t); pthread_mutex_unlock(&g_smu); return r; }
+static int in_table(id<MTLTexture> t) { pthread_mutex_lock(&g_smu); int r = own_shared_locked(t); pthread_mutex_unlock(&g_smu); return r; }
 
 int main(int argc, char **argv) { @autoreleasepool {
     int off = argc > 1 && !strcmp(argv[1], "off");
@@ -40,7 +40,8 @@ int main(int argc, char **argv) { @autoreleasepool {
         CHECK(in_table(ml), "DM_NVN_ALIAS_RETIRE=0: an idle unreferenced texture stays");
     } else {
         CHECK(!in_table(ml), "an idle texture no live object resolves to is retired when memory runs short");
-        CHECK(g_alias_idle >= 1, "the memory report counts it");
+        pthread_mutex_lock(&g_smu); uint64_t idle = own_alias_stats_locked().idle; pthread_mutex_unlock(&g_smu);
+        CHECK(idle >= 1, "the memory report counts it");
         tex_t stale = left; stale.serial = 996001;   // the finalized descriptor, as a texture pool walk resolves it
         CHECK(tex_mtl(&stale) == nil, "a finalized descriptor over a retired texture resolves to nothing, not a new texture");
         tex_t again = target(&pool, 996002, 4 << 20, 256);   // a live object over the retired storage and description

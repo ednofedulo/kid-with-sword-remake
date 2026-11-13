@@ -3,7 +3,6 @@
 through an address it cannot trace share seven zero-initialized words, the helper tries that entry before the hint and the search and records a new choice; and on this Mac's GPU the translated helper reads
 what the pool table names on a run of addresses that hit, leave and come back to pools: adjacent pools, a gap, an address above 4 GiB, a hinted chunk, one lookup after another in each lane.
 Needs DMSH_TEST_XLATE (the translator) like the other translator tests."""
-import ast
 import os
 from pathlib import Path
 import re
@@ -19,12 +18,7 @@ from test_dmsh_ampere_alu import STORE, waiting, s2r_tid   # noqa: E402
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
-import dmsh_chain   # noqa: E402
-tree = ast.parse((TOOLS / 'dmsh_build.py').read_text())
-scope = {'dmsh_chain': dmsh_chain}
-exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, 'id', None) == 'MAC_METAL' for t in n.targets)], type_ignores=[]),
-             str(TOOLS / 'dmsh_build.py'), 'exec'), scope)
-MAC_METAL = scope['MAC_METAL']
+from dmsh_chain import MAC_METAL   # noqa: E402  (the build's Mac compile)
 
 LDG = (0x000ea200081e890f, 0x0000000405067981)   # LDG.E R6, [R5.64 + UR4]: R5 the thread index, an address the translator traces to no storage buffer
 HELPER = re.compile(r'(?m)^int (_\d+)\(thread const int& _\d+, thread const int& _\d+, const device (_\d+)& \w+((?:, thread uint& _\d+)+)\)\n\{\n')

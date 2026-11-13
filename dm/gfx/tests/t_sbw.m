@@ -38,13 +38,20 @@ int main(void){@autoreleasepool{
     CHECK("a running submission's wide write is seen by the next",gw_live(base+0x41000,base+0x41010));
     CHECK("and not elsewhere",!gw_live(ub,ub+0x100));
     // The starting pages of these ranges hash to the same slot as an unrelated uniform page.
-    const uint64_t a = 0x7200000000ull, b = 0x720452f000ull, uniform = 0x7208a5e000ull;
-    CHECK("the three pages collide", gw_slot(a >> 12) == gw_slot(b >> 12) && gw_slot(a >> 12) == gw_slot(uniform >> 12));
+    const uint64_t a = 0x7200000000ull;
+    const uint64_t collision_span = ((uint64_t)GW_PAGES + 1) << 12;
+    uint64_t b = 0, uniform = 0;
+    for (uint64_t pg = (a >> 12) + GW_PAGES + 0x100; pg < (a >> 12) + 8u * GW_N && !uniform; pg++) {
+        if (gw_slot(pg) != gw_slot(a >> 12)) continue;
+        if (!b) b = pg << 12;
+        else if ((pg << 12) >= b + collision_span + 0x1000) uniform = pg << 12;
+    }
+    CHECK("three separated pages collide in the current table", b && uniform);
     pend_reset();
-    sbw_note(a + 16, 0x80000, SBW_GPU);
-    sbw_note(b + 16, 0x80000, SBW_GPU);
+    sbw_note(a + 16, collision_span, SBW_GPU);
+    sbw_note(b + 16, collision_span, SBW_GPU);
     gw_commit(done + 1000);
-    CHECK("the written pages stay live", gw_live(a, a + 16) && gw_live(b + 0x80000, b + 0x80010));
+    CHECK("the written pages stay live", gw_live(a, a + 16) && gw_live(b + collision_span, b + collision_span + 16));
     CHECK("wide writes leave an unrelated uniform page readable", !gw_live(uniform, uniform + 16));
     // A 32 MB write is kept whole, and the same range coming back takes no new slot.
     pend_reset();uint64_t wide=0x7100000000ull,big=0x2000000;
@@ -61,7 +68,10 @@ int main(void){@autoreleasepool{
     for(uint64_t i=0;i<9000;i++)rc_note(0x7100000000ull+i*16,2);
     rc_note((uint64_t)&rec[0],1);
     CHECK("a timestamp report after 9000 query reports counts as 0",rc_value((uint64_t)&rec[0],&x)&&x==0);
-    CHECK("a record with no report reads memory",rc_value((uint64_t)&rec[1],&x)&&x==0);
+    CHECK("a record with no report is unknown while a GPU write anywhere still runs (above)",!rc_value((uint64_t)&rec[1],&x));
+    uint64_t was=g_done;g_done=done+100000;   // every write above has landed
+    CHECK("once nothing that could write it runs, a record with no report reads memory",rc_value((uint64_t)&rec[1],&x)&&x==0);
+    g_done=was;
     CHECK("a query's report stays unknown",!rc_value(0x7100000000ull+8999*16,&x)&&!rc_value(0x7100000000ull,&x));
     (void)q;for(uint64_t i=0;i<300;i++)rc_note((uint64_t)&big+0x1000+i,1);
     CHECK("more timestamp reports than the first table held",rc_value((uint64_t)&big+0x1000,&x)&&x==0);

@@ -32,6 +32,8 @@ static int gpu_fill_ok(uint64_t a, uint64_t n, uint8_t v) {
     return 1;
 }
 int main(void) { @autoreleasepool {
+    // This fixture registers synthetic snapshots without TextureInitialize; retirement has its own test.
+    setenv("DM_NVN_POOL_SKIP_RETIRED", "0", 1);
     mtl_init();
     const uint64_t GB = 1ull << 30, MB = 1ull << 20;
     uint8_t *mem = mmap(NULL, GB, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0); if (mem == MAP_FAILED) abort();

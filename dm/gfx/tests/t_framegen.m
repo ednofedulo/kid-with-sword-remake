@@ -232,6 +232,7 @@ int main(int argc, char **argv) { @autoreleasepool {
       CHECK("a crop shown at its size is copied alone, 1:1, and shown whole", c.width == W / 2 && c.height == H && a == square_x(31) - W / 2 && z == STILL + SQ - W / 2 - 1 && g_snap[k7].gen_ok
             && !g_pq[(g_pq_in - 1) % PQ].crop[2]); }
     present_drop_for_suspend(); mtl_drain();
-    CHECK("all snapshot queue pins are released after display or discard", g_tex_pins.n == 0);
+    pthread_mutex_lock(&g_smu); uint32_t pins = own_stats_locked().tex_pins; pthread_mutex_unlock(&g_smu);
+    CHECK("all snapshot queue pins are released after display or discard", pins == 0);
     printf("frame generation: %d checks, %d failed\n", checks, failed); return failed != 0;
 } }
